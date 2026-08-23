@@ -1,0 +1,13 @@
+pyproject.toml
+src/docutrust/__init__.py
+src/docutrust.egg-info/PKG-INFO
+src/docutrust.egg-info/SOURCES.txt
+src/docutrust.egg-info/dependency_links.txt
+src/docutrust.egg-info/top_level.txt
+src/docutrust/datasets/__init__.py
+src/docutrust/degrade/__init__.py
+src/docutrust/fusion/__init__.py
+src/docutrust/llm/__init__.py
+src/docutrust/metrics/__init__.py
+src/docutrust/ocr/__init__.py
+src/docutrust/signals/__init__.py
