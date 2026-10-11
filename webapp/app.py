@@ -82,7 +82,7 @@ def image_path(cond, doc_id):
 
 
 def ocr_file(cond):
-    return DATA / "ocr" / ("synthetic_ocr.jsonl" if cond == "clean" else f"{cond}_ocr.jsonl")
+    return DATA / "ocr" / f"{cond}_ocr.jsonl"
 
 
 def find_doc(path, doc_id):

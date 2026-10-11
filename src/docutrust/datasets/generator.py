@@ -43,7 +43,7 @@ DATE_RANGE_DAYS = 540
 
 WIDTH, HEIGHT = 600, 900
 OUT_DIR = "data/synthetic"
-N_DOCS = 50
+N_DOCS = 120
 
 
 # ---------------- Step 2: gold fields ----------------
