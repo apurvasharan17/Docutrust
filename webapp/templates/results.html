@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_reliability.html" import reliability %}
+{% block title %}Results · DocuTrust{% endblock %}
+{% block content %}
+{% if not summary %}
+  <div class="card empty">No <span class="mono">results/ece_summary.json</span> yet — run <span class="mono">python3 scripts/compute_ece.py</span>.</div>
+{% else %}
+<h1>Calibration under blur</h1>
+<p class="lede">Qwen2.5-7B-Instruct (Ollama 0.33.2, Tesla T4, f16) extracting 6 fields from 50 synthetic GST invoices,
+at four blur levels. {{ summary[conds[0]].n_fields }} fields per condition.</p>
+
+<div class="kpis">
+  <div class="kpi bad"><div class="k">Accuracy</div>
+    <div class="v">{{ '%.0f' % (headline.acc_from*100) }}%<span class="arrow">→</span>{{ '%.0f' % (headline.acc_to*100) }}%</div>
+    <div class="s">{{ headline.from }} → {{ headline.to }}</div></div>
+  <div class="kpi"><div class="k">Avg confidence (geo)</div>
+    <div class="v">{{ headline.conf_from | conf }}<span class="arrow">→</span>{{ headline.conf_to | conf }}</div>
+    <div class="s">barely moves</div></div>
+  <div class="kpi bad"><div class="k">ECE (geo)</div>
+    <div class="v">{{ headline.ece_from | conf }}<span class="arrow">→</span>{{ headline.ece_to | conf }}</div>
+    <div class="s">0 = honest · 1 = maximally wrong</div></div>
+  <div class="kpi bad"><div class="k">AUROC at {{ headline.to }}</div>
+    <div class="v">{{ headline.auroc_to | conf(2) }}</div>
+    <div class="s">0.5 = coin flip</div></div>
+</div>
+<p class="takeaway">As the document degrades, accuracy collapses but the model's confidence stays near 1.0 —
+<b>the confidence stops meaning anything.</b></p>
+
+<h2>ECE by condition and signal <span class="small">(lower = better calibrated)</span></h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Condition</th><th class="num">Accuracy</th><th class="num">Wrong</th><th class="num">Miss</th>
+    {% for k, name in SIGNALS %}{% set parts = name.split(" · ") %}<th class="num"><span class="fam">{{ parts[0] }}</span>{{ parts[1] }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for c in conds %}{% set s = summary[c] %}
+    <tr><td><a href="{{ url_for('explorer', cond=c) }}">{{ pretty(c) }}</a></td>
+      <td class="num">{{ '%.1f' % (s.accuracy*100) }}%</td><td class="num">{{ s.wrong }}</td><td class="num">{{ s.miss }}</td>
+      {% for k, _ in SIGNALS %}{% set e = s.signals[k].ece if k in s.signals else none %}
+        <td class="heat" style="background: {% if e is not none %}rgba(179,38,30,{{ [e, 1] | min * 0.4 }}){% else %}transparent{% endif %}">{{ e | conf }}</td>
+      {% endfor %}</tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+<h2>AUROC by condition and signal <span class="small">(can the signal separate right from wrong? 0.5 = coin flip)</span></h2>
+<div class="tablewrap"><table>
+  <thead><tr><th>Condition</th>{% for k, name in SIGNALS %}{% set parts = name.split(" · ") %}<th class="num"><span class="fam">{{ parts[0] }}</span>{{ parts[1] }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for c in conds %}{% set s = summary[c] %}
+    <tr><td>{{ pretty(c) }}</td>
+      {% for k, _ in SIGNALS %}{% set a = s.signals[k].auroc if k in s.signals else none %}
+        <td class="v {{ 'low' if a is not none and a < 0.5 }}">{{ a | conf }}</td>{% endfor %}</tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="legend">Clean has no AUROC: every field was correct, so there is nothing to separate.</p>
+
+<h2>Reliability diagrams</h2>
+<div class="tabs">
+  {% for k, name in SIGNALS %}<a href="?signal={{ k }}" class="{{ 'on' if k == sig }}">{{ name }}</a>{% endfor %}
+</div>
+<div class="diagrams">
+  {% for c in conds %}{% set s = summary[c].signals.get(sig) %}
+    <div class="card"><h3>{{ pretty(c) }} <span class="mono small">ECE {{ s.ece | conf if s else '—' }}</span></h3>
+      {% if s %}{{ reliability(s.bins) }}{% endif %}</div>
+  {% endfor %}
+</div>
+<p class="legend">Teal bars = accuracy in each confidence bin; red = gap to the bin's mean confidence; numbers = fields in bin;
+dashed line = perfect calibration. Almost every field sits in the 0.9–1.0 bin regardless of blur.</p>
+
+{% if has_trend_png %}
+<h2>Trend</h2>
+<div class="card pngwrap"><img src="{{ url_for('results_file', name='ece_vs_blur.png') }}" alt="Accuracy, ECE and AUROC across blur levels"></div>
+{% endif %}
+{% endif %}
+{% endblock %}

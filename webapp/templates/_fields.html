@@ -1,0 +1,28 @@
+{# Per-field table. rows: dicts with field_name, raw_value, gold_value?, label?, and SIGNALS keys #}
+{% macro field_table(rows, clean_rows={}, show_gold=true) %}
+<div class="tablewrap"><table>
+  <thead><tr>
+    <th>Field</th>{% if show_gold %}<th>Gold</th>{% endif %}<th>Model output</th>{% if show_gold %}<th>Label</th>{% endif %}
+    {% for k, name in SIGNALS %}{% set parts = name.split(" · ") %}<th class="num"><span class="fam">{{ parts[0] }}</span>{{ parts[1] }}</th>{% endfor %}
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+    {% set c = r.get(HEADLINE) %}
+    {% set cw = r.get('label') and r.label != 'CORRECT' and c is not none and c >= CONFIDENT %}
+    <tr class="{{ 'cw' if cw }}">
+      <td class="field">{{ r.field_name }}</td>
+      {% if show_gold %}<td class="pred">{% if r.gold_value is none %}<span class="null">null</span>{% else %}{{ r.gold_value }}{% endif %}</td>{% endif %}
+      <td class="pred">{% if r.raw_value is none %}<span class="null">null</span>{% else %}{{ r.raw_value }}{% endif %}
+        {% set cr = clean_rows.get(r.field_name) %}
+        {% if cr and cr.raw_value != r.raw_value %}<div class="small">clean: {{ cr.raw_value }}</div>{% endif %}</td>
+      {% if show_gold %}<td>{% if r.get('label') %}<span class="pill {{ r.label }}">{{ r.label }}</span>{% endif %}
+        {% if cw %}<span class="pill cw">confident but wrong</span>{% endif %}</td>{% endif %}
+      {% for k, _ in SIGNALS %}{% set v = r.get(k) %}
+        <td class="v {{ 'low' if v is not none and v < 0.9 }}">{{ v | conf(4) }}</td>{% endfor %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="legend">Red rows: wrong or missed, yet {{ SIGNAL_NAMES[HEADLINE] }} ≥ {{ CONFIDENT }}. Red values: below 0.9.
+“—” = signal unavailable (kept as None, never 0).</p>
+{% endmacro %}

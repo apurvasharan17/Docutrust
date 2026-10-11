@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}DocuTrust{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <div class="brand">Docu<span>Trust</span></div>
+      <div class="tagline">Is the LLM's confidence honest — and does it survive document degradation?</div>
+    </div>
+    <nav>
+      <a href="{{ url_for('results') }}" class="{{ 'active' if request.endpoint == 'results' }}">Results</a>
+      <a href="{{ url_for('explorer') }}" class="{{ 'active' if request.endpoint == 'explorer' }}">Explorer</a>
+      <a href="{{ url_for('analyze') }}" class="{{ 'active' if request.endpoint == 'analyze' }}">Live</a>
+    </nav>
+  </header>
+  <main>
+    {% with msgs = get_flashed_messages() %}
+      {% for m in msgs %}<div class="flash">{{ m }}</div>{% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

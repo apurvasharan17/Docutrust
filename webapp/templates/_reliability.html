@@ -1,0 +1,23 @@
+{# Reliability diagram from compute_ece.py bins: [{bin, avg_conf, accuracy, count}] #}
+{% macro reliability(bins, W=300, H=230) %}
+{% set M = 36 %}{% set PW = W - M - 10 %}{% set PH = H - M - 10 %}
+<svg width="100%" viewBox="0 0 {{ W }} {{ H }}" role="img" aria-label="Reliability diagram" style="max-width:{{ W }}px">
+  <g transform="translate({{ M }},10)" font-family="-apple-system, Segoe UI, sans-serif" font-size="10" fill="#6b6f76">
+    {% for t in [0, 0.5, 1] %}
+      <line x1="0" x2="{{ PW }}" y1="{{ PH - t * PH }}" y2="{{ PH - t * PH }}" stroke="#ece8df"/>
+      <text x="-6" y="{{ PH - t * PH + 3 }}" text-anchor="end">{{ t }}</text>
+      <text x="{{ t * PW }}" y="{{ PH + 14 }}" text-anchor="middle">{{ t }}</text>
+    {% endfor %}
+    {% for b in bins %}
+      {% set x = b.bin / 10 * PW %}{% set w = PW / 10 - 2 %}
+      <rect x="{{ x + 1 }}" y="{{ PH - b.accuracy * PH }}" width="{{ w }}" height="{{ b.accuracy * PH }}" fill="#1f6f6b">
+        <title>conf {{ '%.3f' % b.avg_conf }} · accuracy {{ '%.3f' % b.accuracy }} · n={{ b.count }}</title></rect>
+      {% set top = [b.accuracy, b.avg_conf] | max %}{% set bot = [b.accuracy, b.avg_conf] | min %}
+      <rect x="{{ x + 1 }}" y="{{ PH - top * PH }}" width="{{ w }}" height="{{ (top - bot) * PH }}" fill="#b3261e" fill-opacity=".25" stroke="#b3261e" stroke-width=".8"/>
+      <text x="{{ x + 1 + w / 2 }}" y="{{ PH - top * PH - 3 }}" text-anchor="middle">{{ b.count }}</text>
+    {% endfor %}
+    <line x1="0" y1="{{ PH }}" x2="{{ PW }}" y2="0" stroke="#1d1f22" stroke-dasharray="3 3" opacity=".5"/>
+    <text x="{{ PW / 2 }}" y="{{ PH + 26 }}" text-anchor="middle">confidence</text>
+  </g>
+</svg>
+{% endmacro %}

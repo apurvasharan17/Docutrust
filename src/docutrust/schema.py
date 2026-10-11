@@ -16,9 +16,10 @@ class FieldRecord:
     doc_id: str
     field_name: str
     ocr_text_sha256: str
+    condition: Optional[str] = None  # clean / blur_r1.0 / ...
 
     # output
-    raw_value: Optional[str]
+    raw_value: Optional[str] = None
     token_indices: list = field(default_factory=list)
 
     # --- logprob signals (aggregation is an experimental variable) ---
@@ -40,6 +41,7 @@ class FieldRecord:
     cross_chunk_agreement: Optional[float] = None
     # --- labels ---
     gold_value: Optional[str] = None
+    label: Optional[str] = None  # CORRECT / WRONG / MISS
     is_correct: Optional[bool] = None
 
     # --- provenance ---

@@ -6,6 +6,8 @@ FIELD_TYPES = {
     "cgst_amount": "AMOUNT",
     "sgst_amount": "AMOUNT",
 }
+
+
 def label(predicted, gold, field_name):
     # 1. dono None?
     # 2. gold hai, predicted None?
@@ -26,11 +28,16 @@ def label(predicted, gold, field_name):
         return "WRONG"
     return "CORRECT" if p == g else "WRONG"
 
+
 def normalize_text(s):
+    s = str(s)
     return " ".join(s.lower().split())
 
+
 def normalize_amount(s):
-    s = s.replace("₹", "").replace("Rs", "").replace(",", "").strip()
+    s = (str(s).replace("₹", "").replace("INR", "")
+         .replace("Rs.", "").replace("Rs", "")
+         .replace(",", "").strip())
     try:
         return float(s)
     except ValueError:
