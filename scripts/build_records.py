@@ -6,9 +6,10 @@ Run from repo root:
 Reads  data/llm/<condition>_llm.jsonl
        data/ocr/<condition>_ocr.jsonl           (Tesseract words + confidences)
        data/ocr_easy/<condition>_easyocr.jsonl  (EasyOCR words, second engine)
+       data/llm_samples/<condition>_samples.jsonl (sampled answers, optional)
 Writes data/records/<condition>_records.jsonl
 Signals: logprob/margin, OCR confidence, grounding, validation rules,
-         doc-level OCR confidence, OCR engine agreement
+         doc-level OCR confidence, OCR engine agreement, self-consistency
 """
 import json
 import os
@@ -21,6 +22,7 @@ from docutrust.schema import FieldRecord
 from docutrust.signals.logprob import FIELDS, field_signals, parse_values, sha256
 from docutrust.signals.ocr import ocr_signals, doc_ocr_conf, engine_agreement
 from docutrust.signals.validation import validation_signals
+from docutrust.signals.consistency import consistency_signals
 
 GOLD_DIR = "data/synthetic"  # gold is the same for every condition
 
@@ -35,6 +37,19 @@ def load_words(path):
     return words
 
 
+def load_samples(condition):
+    """doc_id -> list of sampled raw responses. Empty dict if the file is missing."""
+    path = f"data/llm_samples/{condition}_samples.jsonl"
+    if not os.path.exists(path):
+        return {}
+    samples = {}
+    with open(path) as f:
+        for line in f:
+            r = json.loads(line)
+            samples[r["doc_id"]] = r["responses"]
+    return samples
+
+
 def build(condition):
     llm_path = f"data/llm/{condition}_llm.jsonl"
     out_path = f"data/records/{condition}_records.jsonl"
@@ -43,6 +58,7 @@ def build(condition):
     counts = {"CORRECT": 0, "WRONG": 0, "MISS": 0, "NO_SIGNAL": 0}
     tess_words = load_words(f"data/ocr/{condition}_ocr.jsonl")
     easy_words = load_words(f"data/ocr_easy/{condition}_easyocr.jsonl")
+    samples = load_samples(condition)
 
     with open(llm_path) as f_in, open(out_path, "w") as f_out:
         for line in f_in:
@@ -53,6 +69,7 @@ def build(condition):
             values = parse_values(raw["response"])
             # rules look across fields (e.g. CGST == SGST), so compute once per doc
             checks = validation_signals(values, raw["ocr_text"])
+            consistency = consistency_signals(values, samples.get(doc, []))
 
             for field in FIELDS:
                 value = values.get(field)
@@ -65,6 +82,7 @@ def build(condition):
                 sig["validation_passed"] = checks[field]
                 sig["doc_ocr_conf"] = doc_ocr_conf(tess_words[doc])
                 sig["engine_agreement"] = engine_agreement(value, easy_words[doc])
+                sig["self_consistency"] = consistency[field]
 
                 lab = label(value, gold[field], field)
                 counts[lab] += 1
