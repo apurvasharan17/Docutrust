@@ -5,6 +5,7 @@ Run from repo root:
   python3 scripts/build_records.py blur_r1.0
 Reads  data/llm/<condition>_llm.jsonl
        data/ocr/<condition>_ocr.jsonl   (OCR words + confidences)
+Signals: logprob/margin, OCR confidence, grounding, validation rules
 Writes data/records/<condition>_records.jsonl
 """
 import json
@@ -17,6 +18,7 @@ from docutrust.normalize import label
 from docutrust.schema import FieldRecord
 from docutrust.signals.logprob import FIELDS, field_signals, parse_values, sha256
 from docutrust.signals.ocr import ocr_signals
+from docutrust.signals.validation import validation_signals
 
 GOLD_DIR = "data/synthetic"  # gold is the same for every condition
 
@@ -45,6 +47,8 @@ def build(condition):
             with open(os.path.join(GOLD_DIR, raw["doc_id"] + ".json")) as g:
                 gold = json.load(g)
             values = parse_values(raw["response"])
+            # rules look across fields (e.g. CGST == SGST), so compute once per doc
+            checks = validation_signals(values, raw["ocr_text"])
 
             for field in FIELDS:
                 sig = field_signals(raw["response"], raw["logprobs"], field)
@@ -53,6 +57,7 @@ def build(condition):
                     sig = {}
                 # OCR signals for every field (not only when logprobs are missing)
                 sig.update(ocr_signals(values.get(field), ocr_words[raw["doc_id"]]))
+                sig["validation_passed"] = checks[field]
 
                 lab = label(values.get(field), gold[field], field)
                 counts[lab] += 1

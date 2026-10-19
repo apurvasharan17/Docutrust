@@ -23,7 +23,8 @@ from docutrust.metrics.ece import expected_calibration_error
 CONDITIONS = ["clean", "blur_r1.0", "blur_r1.5", "blur_r2.0"]
 LABELS = ["clean", "blur 1.0", "blur 1.5", "blur 2.0"]
 SIGNALS = ["logprob_geo", "logprob_mean", "logprob_min", "logprob_first",
-           "margin_mean", "margin_min", "ocr_conf_min", "grounded"]
+           "margin_mean", "margin_min", "ocr_conf_min", "grounded",
+           "validation_passed"]
 PLOT_SIGNALS = SIGNALS[:4]  # the aggregation methods = the experimental variable
 N_BINS = 10
 OUT_DIR = "results"

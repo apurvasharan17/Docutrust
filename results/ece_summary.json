@@ -140,6 +140,20 @@
             "count": 720
           }
         ]
+      },
+      "validation_passed": {
+        "n": 720,
+        "avg_conf": 1.0,
+        "ece": 0.0,
+        "auroc": null,
+        "bins": [
+          {
+            "bin": 9,
+            "avg_conf": 1.0,
+            "accuracy": 1.0,
+            "count": 720
+          }
+        ]
       }
     }
   },
@@ -438,6 +452,26 @@
             "avg_conf": 1.0,
             "accuracy": 0.9540229885057471,
             "count": 696
+          }
+        ]
+      },
+      "validation_passed": {
+        "n": 720,
+        "avg_conf": 0.9458333333333333,
+        "ece": 0.02499999999999997,
+        "auroc": 0.8447026657552973,
+        "bins": [
+          {
+            "bin": 0,
+            "avg_conf": 0.0,
+            "accuracy": 0.02564102564102564,
+            "count": 39
+          },
+          {
+            "bin": 9,
+            "avg_conf": 1.0,
+            "accuracy": 0.9750367107195301,
+            "count": 681
           }
         ]
       }
@@ -816,6 +850,26 @@
             "avg_conf": 1.0,
             "accuracy": 0.5710900473933649,
             "count": 422
+          }
+        ]
+      },
+      "validation_passed": {
+        "n": 720,
+        "avg_conf": 0.5680555555555555,
+        "ece": 0.22222222222222224,
+        "auroc": 0.8301486199575372,
+        "bins": [
+          {
+            "bin": 0,
+            "avg_conf": 0.0,
+            "accuracy": 0.0,
+            "count": 311
+          },
+          {
+            "bin": 9,
+            "avg_conf": 1.0,
+            "accuracy": 0.60880195599022,
+            "count": 409
           }
         ]
       }
@@ -1236,6 +1290,26 @@
             "avg_conf": 1.0,
             "accuracy": 0.3373493975903614,
             "count": 332
+          }
+        ]
+      },
+      "validation_passed": {
+        "n": 720,
+        "avg_conf": 0.7236111111111111,
+        "ece": 0.5680555555555555,
+        "auroc": 0.6636513157894737,
+        "bins": [
+          {
+            "bin": 0,
+            "avg_conf": 0.0,
+            "accuracy": 0.0,
+            "count": 199
+          },
+          {
+            "bin": 9,
+            "avg_conf": 1.0,
+            "accuracy": 0.21497120921305182,
+            "count": 521
           }
         ]
       }
