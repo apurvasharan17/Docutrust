@@ -17,7 +17,7 @@ sys.path.insert(0, "src")
 from docutrust.normalize import label
 from docutrust.schema import FieldRecord
 from docutrust.signals.logprob import FIELDS, field_signals, parse_values, sha256
-from docutrust.signals.ocr import ocr_signals
+from docutrust.signals.ocr import ocr_signals,doc_ocr_conf
 from docutrust.signals.validation import validation_signals
 
 GOLD_DIR = "data/synthetic"  # gold is the same for every condition
@@ -58,6 +58,7 @@ def build(condition):
                 # OCR signals for every field (not only when logprobs are missing)
                 sig.update(ocr_signals(values.get(field), ocr_words[raw["doc_id"]]))
                 sig["validation_passed"] = checks[field]
+                sig["doc_ocr_conf"] = doc_ocr_conf(ocr_words[raw["doc_id"]])
 
                 lab = label(values.get(field), gold[field], field)
                 counts[lab] += 1

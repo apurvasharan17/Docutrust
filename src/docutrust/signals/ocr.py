@@ -49,3 +49,13 @@ def ocr_signals(value, words):
         "ocr_conf_min": min(found) if found else None,
         "grounded": len(found) == len(confs),
     }
+def doc_ocr_conf(words):
+    """Mean Tesseract confidence (0-1) over the WHOLE document.
+
+    Same value for every field of a doc. Unlike ocr_conf_min it is defined
+    even when the LLM returned null, so it can flag 'confident nulls' on
+    documents the OCR could barely read.
+    """
+    if not words:
+        return None
+    return sum(w["conf"] for w in words) / len(words) / 100

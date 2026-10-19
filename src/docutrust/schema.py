@@ -34,6 +34,7 @@ class FieldRecord:
 
     # --- other signals (Month 2) ---
     ocr_conf_min: Optional[float] = None
+    doc_ocr_conf: Optional[float] = None
     engine_agreement: Optional[float] = None
     grounded: Optional[bool] = None
     validation_passed: Optional[bool] = None
