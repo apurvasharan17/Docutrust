@@ -8,16 +8,23 @@ SCOPE: answered fields only (the LLM returned a value).
   On the synthetic set every field is present, so every null is wrong by
   construction. A model that saw nulls would just learn "null -> wrong",
   which says nothing about real receipts where fields can be truly absent.
-  Confident nulls are reported separately, not hidden inside the fusion.
 
-THREE SCORES per field, all evaluated out-of-fold:
-  raw_logprob : logprob_geo as is                 (the baseline we criticise)
-  platt       : logistic regression on logprob_geo alone
-                (fair baseline: gets the same re-scaling the fused model gets)
+SIGNALS: 8 signals available for every condition. self_consistency is left
+  out on purpose: it exists only for clean + blur (it costs 5x the LLM calls
+  and added little to the fusion), so using it would mean imputing it for the
+  other 9 conditions.
+
+THREE SCORES per field:
+  raw_logprob : logprob_geo as is                  (the baseline we criticise)
+  platt       : logistic regression on logprob_geo (fair recalibration baseline)
   fused       : logistic regression on all signals (our method)
 
-CROSS-VALIDATION groups by doc_id: the same invoice (clean or blurred) is
-never in train and test at the same time.
+TWO EVALUATIONS:
+  A) in-distribution : 5-fold CV over all 13 conditions
+  B) transfer        : train on clean + blur ONLY, test on noise / JPEG / low-res
+                       (degradation types the model has never seen)
+  Both split folds by doc_id, so a test invoice is never in training under any
+  degradation.
 """
 import json
 import sys
@@ -31,10 +38,18 @@ from sklearn.preprocessing import StandardScaler
 sys.path.insert(0, "scripts")
 from compute_ece import expected_calibration_error, auroc, N_BINS
 
-CONDITIONS = ["clean", "blur_r1.0", "blur_r1.5", "blur_r2.0"]
+FAMILIES = {
+    "blur":   ["blur_r1.0", "blur_r1.5", "blur_r2.0"],
+    "noise":  ["noise_s40", "noise_s42", "noise_s43"],
+    "jpeg":   ["jpeg_q10", "jpeg_q5", "jpeg_q1"],
+    "lowres": ["lowres_f0.55", "lowres_f0.35", "lowres_f0.3"],
+}
+CONDITIONS = ["clean"] + [c for fam in FAMILIES.values() for c in fam]
+TRANSFER_TRAIN = ["clean"] + FAMILIES["blur"]
+TRANSFER_TEST = FAMILIES["noise"] + FAMILIES["jpeg"] + FAMILIES["lowres"]
+
 FEATURES = ["logprob_geo", "logprob_min", "margin_min", "ocr_conf_min",
             "engine_agreement", "validation_passed", "doc_ocr_conf", "grounded"]
-OPTIONAL = ["self_consistency"]   # used automatically once it is in the records
 FOLDS = 5
 
 
@@ -56,10 +71,15 @@ def new_model():
     return make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000))
 
 
-def oof_predict(X, y, groups):
-    """Out-of-fold probabilities: each row is scored by a model that never saw its doc."""
-    pred = np.zeros(len(y))
+def oof_predict(X, y, groups, train_mask, test_mask):
+    """Out-of-fold scores. Folds are split by doc_id; within each fold the model
+    trains only on rows in train_mask and scores only rows in test_mask."""
+    pred = np.full(len(y), np.nan)
     for train, test in GroupKFold(n_splits=FOLDS).split(X, y, groups):
+        train = train[train_mask[train]]
+        test = test[test_mask[test]]
+        if len(test) == 0:
+            continue
         model = new_model().fit(X[train], y[train])
         pred[test] = model.predict_proba(X[test])[:, 1]
     return pred
@@ -71,33 +91,15 @@ def safe_auroc(scores, labels):
     return auroc(scores, labels)
 
 
-def main():
-    rows = load_answered()
-    feats = FEATURES + [f for f in OPTIONAL if any(r.get(f) is not None for r in rows)]
-
-    X = np.array([[feature_value(r, f) for f in feats] for r in rows])
-    y = np.array([1 if r["is_correct"] else 0 for r in rows])
-    groups = np.array([r["doc_id"] for r in rows])
-    cond = np.array([r["condition"] for r in rows])
-    lp = feats.index("logprob_geo")
-
-    scores = {
-        "raw_logprob": X[:, lp],
-        "platt": oof_predict(X[:, [lp]], y, groups),
-        "fused": oof_predict(X, y, groups),
-    }
-
-    print(f"answered fields: {len(rows)}")
-    print(f"features: {feats}\n")
-    summary = {"features": feats, "n_answered": len(rows), "folds": FOLDS,
-               "conditions": {}}
-
-    for c in CONDITIONS + ["all"]:
-        mask = np.ones(len(y), dtype=bool) if c == "all" else cond == c
+def evaluate(title, scores, y, cond, conds):
+    """Print and return ECE / AUROC per condition (+ all listed conditions together)."""
+    print(f"=== {title} ===")
+    out = {}
+    for c in conds + ["all"]:
+        mask = np.isin(cond, conds) if c == "all" else cond == c
         labels = [bool(v) for v in y[mask]]
         res = {"n": int(mask.sum()), "accuracy": float(y[mask].mean())}
         print(f"{c}: n={res['n']}, accuracy={res['accuracy']:.3f}")
-
         for name, s in scores.items():
             confs = [float(v) for v in s[mask]]
             ece = expected_calibration_error(confs, labels, N_BINS)
@@ -106,12 +108,48 @@ def main():
             au_txt = f"{au:.3f}" if au is not None else "  -  "
             print(f"   {name:12s} avg_conf={np.mean(confs):.3f}  "
                   f"ECE={ece:.3f}  AUROC={au_txt}")
-        summary["conditions"][c] = res
-        print()
+        out[c] = res
+    print()
+    return out
+
+
+def main():
+    rows = load_answered()
+    X = np.array([[feature_value(r, f) for f in FEATURES] for r in rows])
+    y = np.array([1 if r["is_correct"] else 0 for r in rows])
+    groups = np.array([r["doc_id"] for r in rows])
+    cond = np.array([r["condition"] for r in rows])
+    lp = [FEATURES.index("logprob_geo")]
+    everything = np.ones(len(y), dtype=bool)
+
+    print(f"answered fields: {len(rows)}   features: {FEATURES}\n")
+    summary = {"features": FEATURES, "n_answered": len(rows), "folds": FOLDS}
+
+    # A) in-distribution: every condition can appear in training (other docs)
+    scores_a = {
+        "raw_logprob": X[:, lp[0]],
+        "platt": oof_predict(X[:, lp], y, groups, everything, everything),
+        "fused": oof_predict(X, y, groups, everything, everything),
+    }
+    summary["in_distribution"] = evaluate(
+        "A) in-distribution: 5-fold CV over all 13 conditions",
+        scores_a, y, cond, CONDITIONS)
+
+    # B) transfer: train on clean + blur only, test on unseen degradation types
+    train_mask = np.isin(cond, TRANSFER_TRAIN)
+    test_mask = np.isin(cond, TRANSFER_TEST)
+    scores_b = {
+        "raw_logprob": X[:, lp[0]],
+        "platt": oof_predict(X[:, lp], y, groups, train_mask, test_mask),
+        "fused": oof_predict(X, y, groups, train_mask, test_mask),
+    }
+    summary["transfer"] = evaluate(
+        "B) transfer: trained on clean + blur, tested on noise / JPEG / low-res",
+        scores_b, y, cond, TRANSFER_TEST)
 
     # which signals does the fused model lean on? (fit once on all data)
     full = new_model().fit(X, y)
-    weights = dict(zip(feats, full[-1].coef_[0].tolist()))
+    weights = dict(zip(FEATURES, full[-1].coef_[0].tolist()))
     print("signal weights (standardised, + means 'more likely correct'):")
     for f, w in sorted(weights.items(), key=lambda t: -abs(t[1])):
         print(f"   {f:18s} {w:+.3f}")

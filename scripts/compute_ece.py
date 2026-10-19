@@ -20,8 +20,16 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, "src")
 from docutrust.metrics.ece import expected_calibration_error
 
-CONDITIONS = ["clean", "blur_r1.0", "blur_r1.5", "blur_r2.0"]
-LABELS = ["clean", "blur 1.0", "blur 1.5", "blur 2.0"]
+CONDITIONS = ["clean",
+              "blur_r1.0", "blur_r1.5", "blur_r2.0",
+              "noise_s40", "noise_s42", "noise_s43",
+              "jpeg_q10", "jpeg_q5", "jpeg_q1",
+              "lowres_f0.55", "lowres_f0.35", "lowres_f0.3"]
+LABELS = ["clean",
+          "blur 1.0", "blur 1.5", "blur 2.0",
+          "noise 40", "noise 42", "noise 43",
+          "jpeg q10", "jpeg q5", "jpeg q1",
+          "lowres 0.55", "lowres 0.35", "lowres 0.3"]
 SIGNALS = ["logprob_geo", "logprob_mean", "logprob_min", "logprob_first",
            "margin_mean", "margin_min", "ocr_conf_min", "grounded",
            "validation_passed", "doc_ocr_conf", "engine_agreement",
