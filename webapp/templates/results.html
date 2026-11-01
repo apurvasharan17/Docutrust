@@ -1,14 +1,37 @@
 {% extends "base.html" %}
 {% from "_reliability.html" import reliability %}
 {% block title %}Results · DocuTrust{% endblock %}
+
+{# one table: rows = conditions, columns = ECE / AUROC for each score #}
+{% macro score_table(block, order) %}
+<div class="tablewrap"><table>
+  <thead>
+    <tr><th rowspan="2">Condition</th><th class="num" rowspan="2">n</th><th class="num" rowspan="2">Accuracy</th>
+      {% for k, name in FUSION_SCORES %}<th class="num {{ 'fused' if k == 'fused' }}" colspan="2">{{ name }}</th>{% endfor %}</tr>
+    <tr>{% for k, _ in FUSION_SCORES %}<th class="num {{ 'fused' if k == 'fused' }}">ECE</th><th class="num {{ 'fused' if k == 'fused' }}">AUROC</th>{% endfor %}</tr>
+  </thead>
+  <tbody>
+  {% for c in order if c in block %}{% set s = block[c] %}
+    <tr class="{{ 'totalrow' if c == 'all' }}"><td>{{ 'all' if c == 'all' else pretty(c) }}</td>
+      <td class="num">{{ s.n }}</td><td class="num">{{ '%.1f' % (s.accuracy*100) }}%</td>
+      {% for k, _ in FUSION_SCORES %}
+        <td class="v {{ 'fused' if k == 'fused' }}">{{ s[k].ece | conf }}</td>
+        <td class="v {{ 'fused' if k == 'fused' }}">{{ s[k].auroc | conf }}</td>{% endfor %}</tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endmacro %}
+
 {% block content %}
 {% if not summary %}
   <div class="card empty">No <span class="mono">results/ece_summary.json</span> yet — run <span class="mono">python3 scripts/compute_ece.py</span>.</div>
 {% else %}
-<h1>Calibration under blur</h1>
-<p class="lede">Qwen2.5-7B-Instruct (Ollama 0.33.2, Tesla T4, f16) extracting 6 fields from 50 synthetic GST invoices,
-at four blur levels. {{ summary[conds[0]].n_fields }} fields per condition.</p>
+<h1>Calibration under document degradation</h1>
+<p class="lede">Qwen2.5-7B-Instruct (Ollama 0.33.2, Tesla T4, f16) extracting 6 fields from 120 synthetic GST invoices
+under {{ conds | length }} conditions: clean, and blur, noise, JPEG and low resolution at three levels each.
+{{ summary[conds[0]].n_fields }} fields per condition.</p>
 
+<h2>The problem: raw confidence stops meaning anything</h2>
 <div class="kpis">
   <div class="kpi bad"><div class="k">Accuracy</div>
     <div class="v">{{ '%.0f' % (headline.acc_from*100) }}%<span class="arrow">→</span>{{ '%.0f' % (headline.acc_to*100) }}%</div>
@@ -24,9 +47,71 @@ at four blur levels. {{ summary[conds[0]].n_fields }} fields per condition.</p>
     <div class="s">0.5 = coin flip</div></div>
 </div>
 <p class="takeaway">As the document degrades, accuracy collapses but the model's confidence stays near 1.0 —
-<b>the confidence stops meaning anything.</b></p>
+<b>the same happens under noise, JPEG and low resolution, and with Llama and Mistral.</b></p>
 
-<h2>ECE by condition and signal <span class="small">(lower = better calibrated)</span></h2>
+{% if fusion %}
+{% set t = fusion.transfer['all'] %}
+<h2 id="fusion">The fix: fusing input-side signals</h2>
+<p class="lede">A logistic regression combines {{ fusion.features | length }} signals — logprob, OCR confidence, a second OCR
+engine, business-rule validation, document OCR quality — into one confidence. Scored on fields where the model returned a value;
+folds are split by document, so no test invoice is ever seen in training.</p>
+<div class="kpis">
+  <div class="kpi bad"><div class="k">Raw logprob ECE</div><div class="v">{{ t.raw_logprob.ece | conf }}</div>
+    <div class="s">unseen degradation types</div></div>
+  <div class="kpi"><div class="k">Platt ECE</div><div class="v">{{ t.platt.ece | conf }}</div>
+    <div class="s">logprob, recalibrated</div></div>
+  <div class="kpi good"><div class="k">Fused ECE</div><div class="v">{{ t.fused.ece | conf }}</div>
+    <div class="s">lower = better calibrated</div></div>
+  <div class="kpi good"><div class="k">Fused AUROC</div><div class="v">{{ t.fused.auroc | conf(2) }}</div>
+    <div class="s">vs {{ t.raw_logprob.auroc | conf(2) }} raw</div></div>
+</div>
+<p class="takeaway">Trained only on <b>clean + blur</b>, the fused confidence stays calibrated on <b>noise, JPEG and
+low resolution</b>, degradation types it has never seen. Platt scaling gets the same rescaling but sees only logprob;
+the gap to it is the value of the extra signals.</p>
+
+<h3>Transfer: trained on clean + blur, tested on unseen degradation types</h3>
+{{ score_table(fusion.transfer, CONDITION_ORDER + ['all']) }}
+
+<h3>In-distribution: 5-fold cross-validation over all {{ conds | length }} conditions</h3>
+{{ score_table(fusion.in_distribution, CONDITION_ORDER + ['all']) }}
+<p class="legend">ECE alone can flatter a score that is nearly constant (Platt on JPEG q1); AUROC shows whether it also
+separates right from wrong. Fused is the only score that does well on both.</p>
+
+{% if fusion.weights %}
+<h3>Which signals the fused model relies on</h3>
+<div class="tablewrap"><table>
+  <thead><tr><th>Signal</th><th class="num">Weight (standardised)</th></tr></thead>
+  <tbody>{% for k, w in fusion.weights | dictsort(by='value', reverse=true) %}
+    <tr><td>{{ SIGNAL_NAMES.get(k, k) }}</td><td class="num">{{ '%+.2f' % w }}</td></tr>{% endfor %}</tbody>
+</table></div>
+<p class="legend">+ = higher signal means more likely correct. Correlated signals share weight, so small negative
+weights do not mean a signal is harmful.</p>
+{% endif %}
+{% endif %}
+
+{% if models %}
+<h2 id="models">Across LLMs</h2>
+<p class="lede">The same pipeline with Llama 3.1 8B and Mistral 7B (same Ollama, quantisation, prompt and hardware) on
+{{ models.shared_conditions | length }} shared conditions. <b>Fused from Qwen</b> = the fusion model trained on Qwen only,
+applied unchanged.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Model</th><th class="num">n</th><th class="num">Accuracy</th>
+    <th class="num">Raw ECE / AUROC</th><th class="num">Platt</th><th class="num fused">Fused</th><th class="num fused">Fused from Qwen</th></tr></thead>
+  <tbody>
+  {% for m, block in models.answered_fields.items() %}{% set s = block['all'] %}
+    <tr><td>{{ MODEL_NAMES.get(m, m) }}</td><td class="num">{{ s.n }}</td><td class="num">{{ '%.1f' % (s.accuracy*100) }}%</td>
+      <td class="v">{{ s.raw_logprob.ece | conf }} / {{ s.raw_logprob.auroc | conf }}</td>
+      <td class="v">{{ s.platt.ece | conf }} / {{ s.platt.auroc | conf }}</td>
+      <td class="v fused">{{ s.fused.ece | conf }} / {{ s.fused.auroc | conf }}</td>
+      <td class="v fused">{% if s.fused_from_qwen %}{{ s.fused_from_qwen.ece | conf }} / {{ s.fused_from_qwen.auroc | conf }}{% else %}—{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="takeaway">All three models are overconfident, and a fusion model trained on one LLM calibrates the others:
+the strongest signals come from the input (OCR), not from the model.</p>
+{% endif %}
+
+<h2>Every signal: ECE by condition <span class="small">(lower = better calibrated)</span></h2>
 <div class="tablewrap"><table>
   <thead><tr><th>Condition</th><th class="num">Accuracy</th><th class="num">Wrong</th><th class="num">Miss</th>
     {% for k, name in SIGNALS %}{% set parts = name.split(" · ") %}<th class="num"><span class="fam">{{ parts[0] }}</span>{{ parts[1] }}</th>{% endfor %}</tr></thead>
@@ -40,8 +125,10 @@ at four blur levels. {{ summary[conds[0]].n_fields }} fields per condition.</p>
   {% endfor %}
   </tbody>
 </table></div>
+<p class="legend">Single signals over all fields of a condition (nulls included where the signal is defined).
+Self-consistency was run for clean + blur only.</p>
 
-<h2>AUROC by condition and signal <span class="small">(can the signal separate right from wrong? 0.5 = coin flip)</span></h2>
+<h2>Every signal: AUROC by condition <span class="small">(can the signal separate right from wrong? 0.5 = coin flip)</span></h2>
 <div class="tablewrap"><table>
   <thead><tr><th>Condition</th>{% for k, name in SIGNALS %}{% set parts = name.split(" · ") %}<th class="num"><span class="fam">{{ parts[0] }}</span>{{ parts[1] }}</th>{% endfor %}</tr></thead>
   <tbody>
@@ -65,11 +152,11 @@ at four blur levels. {{ summary[conds[0]].n_fields }} fields per condition.</p>
   {% endfor %}
 </div>
 <p class="legend">Teal bars = accuracy in each confidence bin; red = gap to the bin's mean confidence; numbers = fields in bin;
-dashed line = perfect calibration. Almost every field sits in the 0.9–1.0 bin regardless of blur.</p>
+dashed line = perfect calibration. For raw logprob, almost every field sits in the 0.9–1.0 bin regardless of degradation.</p>
 
 {% if has_trend_png %}
 <h2>Trend</h2>
-<div class="card pngwrap"><img src="{{ url_for('results_file', name='ece_vs_blur.png') }}" alt="Accuracy, ECE and AUROC across blur levels"></div>
+<div class="card pngwrap"><img src="{{ url_for('results_file', name='ece_vs_blur.png') }}" alt="Accuracy, ECE and AUROC across conditions"></div>
 {% endif %}
 {% endif %}
 {% endblock %}

@@ -147,3 +147,13 @@ td.v.low { color: var(--bad); font-weight: 700; }
 td.pred { min-width: 130px; word-break: normal; overflow-wrap: anywhere; }
 th.num .fam { display: block; color: var(--ink); }
 table { font-size: 14px; }
+
+/* ---- fusion (added Nov 2026) ------------------------------------------------------- */
+th.fused, td.fused { background: rgba(15, 118, 110, 0.08); }
+td.v.fused { font-weight: 600; color: #0f766e; }
+td.v.fused.low { color: #b3261e; }
+.pill.flag { background: #b3261e; color: #fff; }
+.kpi.good .v { color: #0f766e; }
+b.good { color: #0f766e; }
+tr.totalrow td { font-weight: 600; border-top: 2px solid rgba(0, 0, 0, 0.15); }
+h3 { margin-top: 22px; }

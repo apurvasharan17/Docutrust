@@ -7,10 +7,10 @@
 {% else %}
 <h1>Document explorer</h1>
 <p class="lede">Every stage of the pipeline for one document, from cached outputs: image → Tesseract OCR → Qwen output
-→ per-field signals → label.</p>
+→ per-field signals → <b>fused confidence</b> → label.</p>
 
 <div class="tabs">
-  {% for c in conds %}<a href="{{ url_for('explorer', cond=c, doc=doc) }}" class="{{ 'on' if c == cond }}">{{ pretty(c) }}</a>{% endfor %}
+  {% for c in conds %}<a href="{{ url_for('explorer', cond=c) }}" class="{{ 'on' if c == cond }}">{{ pretty(c) }}</a>{% endfor %}
 </div>
 
 <form class="filters card" method="get" style="margin-bottom:18px">
@@ -23,12 +23,15 @@
     </select></div>
   <div class="small" style="padding-bottom:10px">
     {{ pretty(cond) }}: <b>{{ stats.correct }}/{{ stats.n }}</b> fields correct ·
-    <b style="color:var(--bad)">{{ stats.cw }}</b> of {{ stats.wrong }} wrong/missed fields had confidence ≥ {{ CONFIDENT }}
+    <b style="color:var(--bad)">{{ stats.cw }}</b> of {{ stats.wrong }} wrong/missed fields had raw confidence ≥ {{ CONFIDENT }}
+    {% if stats.cw_values %} · fusion flags <b class="good">{{ stats.caught }} of {{ stats.cw_values }}</b>
+      confident-but-wrong values{% endif %}
+    <div>Fused scores: {{ fused_source }}.</div>
   </div>
 </form>
 
 <div class="imgs">
-  {% if cond != 'clean' and has_clean_img %}
+  {% if cond not in ('clean', 'real') and has_clean_img %}
     <figure><figcaption>Clean</figcaption><img src="{{ url_for('image', cond='clean', doc_id=doc) }}" alt="clean {{ doc }}"></figure>
   {% endif %}
   {% if has_img %}
@@ -52,9 +55,11 @@
 
 {% if worst %}
 <h2>Most confident wrong values in {{ pretty(cond) }}</h2>
-<p class="small" style="margin-top:-6px">The model returned a value, it was wrong, and it was still sure. ({{ stats.miss_cw }} more fields were missed — returned <span class="mono">null</span> — with confidence ≥ {{ CONFIDENT }}.)</p>
+<p class="small" style="margin-top:-6px">The model returned a value, it was wrong, and raw logprob was still sure.
+Compare the fused column. ({{ stats.miss_cw }} more fields were missed — returned <span class="mono">null</span> — with raw confidence ≥ {{ CONFIDENT }}.)</p>
 <div class="tablewrap"><table>
-  <thead><tr><th>Doc</th><th>Field</th><th>Gold</th><th>Model output</th><th>Label</th><th class="num">{{ SIGNAL_NAMES[HEADLINE] }}</th><th class="num">Logprob · min</th><th class="num">Margin · min</th></tr></thead>
+  <thead><tr><th>Doc</th><th>Field</th><th>Gold</th><th>Model output</th><th>Label</th>
+    <th class="num">{{ SIGNAL_NAMES[HEADLINE] }}</th><th class="num fused">Fused · confidence</th></tr></thead>
   <tbody>
   {% for r in worst %}
     <tr class="wrongrow">
@@ -64,8 +69,7 @@
       <td class="pred">{% if r.raw_value is none %}<span class="null">null</span>{% else %}{{ r.raw_value }}{% endif %}</td>
       <td><span class="pill {{ r.label }}">{{ r.label }}</span></td>
       <td class="v">{{ r.get(HEADLINE) | conf(4) }}</td>
-      <td class="v">{{ r.logprob_min | conf(4) }}</td>
-      <td class="v">{{ r.margin_min | conf(4) }}</td>
+      <td class="v fused {{ 'low' if r.get(FUSED) is not none and r.get(FUSED) < FLAG }}">{{ r.get(FUSED) | conf(4) }}</td>
     </tr>
   {% endfor %}
   </tbody>

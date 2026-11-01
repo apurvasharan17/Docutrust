@@ -2,19 +2,20 @@
 DocuTrust — Flask demo surface for the research pipeline.
 
 This app has NO research logic of its own. It only:
-  - reads files the pipeline already produced (results/, data/), and
+  - reads files the pipeline already produced (results/, data/, artifacts/), and
   - calls functions from the docutrust package (src/docutrust/).
 
 Pages
-  /            Results   — ECE / AUROC per condition and signal (results/ece_summary.json)
-  /explorer    Explorer  — one document under one condition: image, OCR, LLM output, per-field signals
-  /analyze     Live      — upload a receipt, run blur → OCR → Qwen (Ollama) → signals → labels
+  /            Results   — the problem (raw logprob ECE / AUROC per condition) and the fix
+                           (fusion: in-distribution, transfer to unseen degradations, 3 LLMs)
+  /explorer    Explorer  — one document under one condition: image, OCR, LLM output,
+                           per-field signals and fused confidence
+  /analyze     Live      — upload a receipt, run OCR → Qwen (Ollama) → signals → fused confidence
 
 Run from the repo root:
   python webapp/app.py        →  http://127.0.0.1:5000
 """
 import json
-import math
 import os
 import sys
 import tempfile
@@ -28,13 +29,16 @@ ROOT = Path(__file__).resolve().parent.parent          # .../Docutrust
 sys.path.insert(0, str(ROOT / "src"))
 
 from docutrust.degrade.blur import BLUR_LEVELS, blur, condition_name  # noqa: E402
+from docutrust.fusion.score import fused_confidence                   # noqa: E402
 from docutrust.normalize import label as label_field                  # noqa: E402
 from docutrust.signals.logprob import FIELDS, field_signals, parse_values  # noqa: E402
+from docutrust.signals.ocr import doc_ocr_conf, ocr_signals            # noqa: E402
+from docutrust.signals.validation import validation_signals            # noqa: E402
 
 DATA = ROOT / "data"
 RESULTS = ROOT / "results"
 
-# The 2 implemented signals, with their aggregation variants (same order as compute_ece.py)
+# Every signal in results/ece_summary.json (same order as compute_ece.py) — Results page
 SIGNALS = [
     ("logprob_geo", "Logprob · geo mean"),
     ("logprob_mean", "Logprob · mean"),
@@ -42,14 +46,41 @@ SIGNALS = [
     ("logprob_first", "Logprob · first token"),
     ("margin_mean", "Margin · mean"),
     ("margin_min", "Margin · min"),
+    ("ocr_conf_min", "OCR · min conf"),
+    ("grounded", "OCR · grounded"),
+    ("validation_passed", "Rules · validation"),
+    ("doc_ocr_conf", "OCR · document"),
+    ("engine_agreement", "OCR · 2 engines"),
+    ("self_consistency", "LLM · self-consistency"),
 ]
-HEADLINE = "logprob_geo"           # confidence shown as "the" confidence in the UI
-CONFIDENT = 0.90                    # "confident but wrong" threshold
-CONDITION_ORDER = ["clean", "blur_r1.0", "blur_r1.5", "blur_r2.0"]
+# Columns in the per-field tables (Explorer, Live): fused first, raw logprob to compare
+TABLE_SIGNALS = [
+    ("fused", "Fused · confidence"),
+    ("logprob_geo", "Logprob · geo mean"),
+    ("ocr_conf_min", "OCR · min conf"),
+    ("engine_agreement", "OCR · 2 engines"),
+    ("validation_passed", "Rules · validation"),
+    ("doc_ocr_conf", "OCR · document"),
+]
+HEADLINE = "logprob_geo"           # the raw confidence the project criticises
+FUSED = "fused"                    # the confidence the project proposes
+CONFIDENT = 0.90                   # raw logprob ≥ this but wrong = "confident but wrong"
+FLAG = 0.50                        # fused below this = "check this field"
+CONDITION_ORDER = ["clean",
+                   "blur_r1.0", "blur_r1.5", "blur_r2.0",
+                   "noise_s40", "noise_s42", "noise_s43",
+                   "jpeg_q10", "jpeg_q5", "jpeg_q1",
+                   "lowres_f0.55", "lowres_f0.35", "lowres_f0.3",
+                   "real"]
+FUSION_SCORES = [("raw_logprob", "Raw logprob"), ("platt", "Platt (logprob only)"),
+                 ("fused", "Fused (all signals)")]
+MODEL_NAMES = {"qwen25_7b": "Qwen 2.5 7B", "llama31_8b": "Llama 3.1 8B", "mistral_7b": "Mistral 7B"}
 
 # Live page: Ollama location — local by default, Kaggle tunnel via env var
 OLLAMA_URL = os.environ.get("DOCUTRUST_OLLAMA_URL", "http://localhost:11434").rstrip("/")
 MODEL = os.environ.get("DOCUTRUST_MODEL", "qwen2.5:7b-instruct")
+LIVE_FUSION = "fusion_model_live"  # 7 signals: EasyOCR is too heavy to run per upload
+MAX_SIDE = 2000                    # phone photos are huge; same limit as scripts/prep_real.py
 
 app = Flask(__name__)
 app.secret_key = "docutrust-demo"
@@ -64,6 +95,13 @@ def read_jsonl(path):
         return [json.loads(line) for line in f if line.strip()]
 
 
+def read_json(path):
+    if not path.exists():
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
 def conditions():
     """Conditions that have a records file, in a fixed order."""
     found = {p.name[: -len("_records.jsonl")] for p in (DATA / "records").glob("*_records.jsonl")}
@@ -72,12 +110,20 @@ def conditions():
 
 
 def pretty(cond):
-    return "clean" if cond == "clean" else cond.replace("blur_r", "blur ")
+    if cond == "real":
+        return "real receipt"
+    for prefix, name in (("blur_r", "blur "), ("noise_s", "noise "),
+                         ("jpeg_q", "jpeg q"), ("lowres_f", "lowres ")):
+        if cond.startswith(prefix):
+            return name + cond[len(prefix):]
+    return cond
 
 
 def image_path(cond, doc_id):
     if cond == "clean":
         return DATA / "synthetic" / f"{doc_id}.png"
+    if cond == "real":
+        return DATA / "real" / f"{doc_id}.png"
     return DATA / "degraded" / cond / f"{doc_id}.png"
 
 
@@ -97,22 +143,45 @@ def find_doc(path, doc_id):
     return None
 
 
+def oof_scores(cond):
+    """Out-of-fold fused scores saved by scripts/fuse.py: {(doc_id, field): score}.
+    Each one comes from a model that never saw that document."""
+    path = RESULTS / "fusion_oof.jsonl"
+    if not path.exists():
+        return {}
+    out = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if f'"{cond}"' not in line:
+                continue
+            d = json.loads(line)
+            if d["condition"] == cond:
+                out[(d["doc_id"], d["field_name"])] = d["fused"]
+    return out
+
+
 def is_confident_wrong(rec):
     c = rec.get(HEADLINE)
     return rec.get("label") != "CORRECT" and c is not None and c >= CONFIDENT
+
+
+def is_flagged(rec):
+    f = rec.get(FUSED)
+    return f is not None and f < FLAG
 
 
 @app.template_filter("conf")
 def fmt_conf(v, digits=3):
     if v is None:
         return "—"
-    return f"{v:.{digits}f}"
+    return f"{float(v):.{digits}f}"
 
 
 @app.context_processor
 def inject():
-    return {"SIGNALS": SIGNALS, "SIGNAL_NAMES": dict(SIGNALS), "pretty": pretty,
-            "HEADLINE": HEADLINE, "CONFIDENT": CONFIDENT}
+    return {"SIGNALS": SIGNALS, "SIGNAL_NAMES": dict(SIGNALS + TABLE_SIGNALS),
+            "TABLE_SIGNALS": TABLE_SIGNALS, "pretty": pretty, "HEADLINE": HEADLINE,
+            "FUSED": FUSED, "CONFIDENT": CONFIDENT, "FLAG": FLAG}
 
 
 # =====================================================================================
@@ -120,25 +189,30 @@ def inject():
 # =====================================================================================
 @app.get("/")
 def results():
-    path = RESULTS / "ece_summary.json"
-    if not path.exists():
+    summary = read_json(RESULTS / "ece_summary.json")
+    if not summary:
         return render_template("results.html", summary=None)
-    summary = json.load(open(path, encoding="utf-8"))
     conds = [c for c in CONDITION_ORDER if c in summary] + [c for c in summary if c not in CONDITION_ORDER]
 
     sig = request.args.get("signal", HEADLINE)
     if sig not in dict(SIGNALS):
         sig = HEADLINE
 
-    first, last = summary[conds[0]], summary[conds[-1]]
+    # the problem, told on blur: clean vs heavy blur
+    worst = "blur_r2.0" if "blur_r2.0" in summary else conds[-1]
+    first, last = summary[conds[0]], summary[worst]
     headline = {
         "acc_from": first["accuracy"], "acc_to": last["accuracy"],
         "conf_from": first["signals"][HEADLINE]["avg_conf"], "conf_to": last["signals"][HEADLINE]["avg_conf"],
         "ece_from": first["signals"][HEADLINE]["ece"], "ece_to": last["signals"][HEADLINE]["ece"],
-        "auroc_to": last["signals"][HEADLINE]["auroc"], "from": pretty(conds[0]), "to": pretty(conds[-1]),
+        "auroc_to": last["signals"][HEADLINE]["auroc"], "from": pretty(conds[0]), "to": pretty(worst),
     }
+    fusion = read_json(RESULTS / "fusion_summary.json")
+    models = read_json(RESULTS / "model_comparison.json")
     return render_template("results.html", summary=summary, conds=conds, sig=sig, headline=headline,
-                           has_trend_png=(RESULTS / "ece_vs_blur.png").exists())
+                           has_trend_png=(RESULTS / "ece_vs_blur.png").exists(),
+                           fusion=fusion, models=models, FUSION_SCORES=FUSION_SCORES,
+                           MODEL_NAMES=MODEL_NAMES, CONDITION_ORDER=CONDITION_ORDER)
 
 
 @app.get("/results/<name>")
@@ -164,8 +238,16 @@ def explorer():
         abort(404)
 
     records = read_jsonl(DATA / "records" / f"{cond}_records.jsonl")
+    # honest scores: out-of-fold where they exist (synthetic data); otherwise the final
+    # model (docutrust.fusion.score), e.g. the real receipt, which no model was trained on
+    oof = oof_scores(cond)
+    for r in records:
+        key = (r["doc_id"], r["field_name"])
+        r[FUSED] = oof[key] if key in oof else fused_confidence(r)
+    fused_source = ("out-of-fold: each score comes from a model that never saw this document"
+                    if oof else "final model: this data was not used to train it")
     doc_ids = sorted({r["doc_id"] for r in records})
-    doc = request.args.get("doc") or "doc_001"
+    doc = request.args.get("doc") or doc_ids[0]
     if doc not in doc_ids:
         doc = doc_ids[0]
 
@@ -174,7 +256,7 @@ def explorer():
 
     # the same fields under clean, for side-by-side comparison
     clean_rows = {}
-    if cond != "clean" and "clean" in conds:
+    if cond not in ("clean", "real") and "clean" in conds:
         clean_rows = {r["field_name"]: r for r in read_jsonl(DATA / "records" / "clean_records.jsonl")
                       if r["doc_id"] == doc}
 
@@ -187,6 +269,8 @@ def explorer():
     wrongs = [r for r in records if r["label"] != "CORRECT"]
     n_cw = sum(is_confident_wrong(r) for r in records)
     wrong_values = [r for r in records if r["label"] == "WRONG" and r.get("raw_value") is not None]
+    cw_values = [r for r in wrong_values if is_confident_wrong(r)]
+    caught = sum(is_flagged(r) for r in cw_values)    # confident-but-wrong values fusion flags
     worst = sorted(wrong_values, key=lambda r: -(r.get(HEADLINE) or 0))[:12]
     miss_cw = sum(r["label"] == "MISS" and is_confident_wrong(r) for r in records)
 
@@ -201,7 +285,9 @@ def explorer():
         "explorer.html", conds=conds, cond=cond, doc=doc, doc_ids=doc_ids, per_doc=per_doc,
         rows=rows, clean_rows=clean_rows, ocr=ocr, llm=llm,
         has_clean_img=image_path("clean", doc).exists(), has_img=image_path(cond, doc).exists(),
-        stats={"n": n, "correct": n_correct, "wrong": len(wrongs), "cw": n_cw, "miss_cw": miss_cw}, worst=worst,
+        stats={"n": n, "correct": n_correct, "wrong": len(wrongs), "cw": n_cw, "miss_cw": miss_cw,
+               "cw_values": len(cw_values), "caught": caught},
+        worst=worst, fused_source=fused_source,
     )
 
 
@@ -234,6 +320,7 @@ def ollama_status():
 def run_live(img, radius, gold):
     """One pass through the real pipeline, using the package's own functions."""
     import pytesseract
+    from PIL import ImageOps
     from docutrust.llm import ollama_runner
     from docutrust.ocr.tesseract import ocr_image
 
@@ -242,7 +329,9 @@ def run_live(img, radius, gold):
     ollama_runner.MODEL = MODEL
 
     cond = "clean" if radius == 0 else condition_name(radius)
-    img = img.convert("RGB")
+    img = ImageOps.exif_transpose(img).convert("RGB")   # phone photos store rotation in metadata
+    if max(img.size) > MAX_SIDE:
+        img.thumbnail((MAX_SIDE, MAX_SIDE))
     if radius:
         img = blur(img, radius)
 
@@ -260,10 +349,17 @@ def run_live(img, radius, gold):
         os.unlink(tmp_path)
 
     values = parse_values(out["response"])           # docutrust.signals.logprob
+    checks = validation_signals(values, ocr["text"]) # docutrust.signals.validation
+    doc_conf = doc_ocr_conf(ocr["words"])            # docutrust.signals.ocr
     rows = []
     for f in FIELDS:
         sig = field_signals(out["response"], out["logprobs"], f) or {}
-        row = {"field_name": f, "raw_value": values.get(f), **{k: sig.get(k) for k, _ in SIGNALS}}
+        row = {"field_name": f, "raw_value": values.get(f), **sig}
+        row.update(ocr_signals(values.get(f), ocr["words"]))
+        row["validation_passed"] = checks[f]
+        row["doc_ocr_conf"] = doc_conf
+        row["engine_agreement"] = None               # EasyOCR is not run live
+        row[FUSED] = fused_confidence(row, LIVE_FUSION)
         if gold is not None:
             row["gold_value"] = gold.get(f)
             row["label"] = label_field(values.get(f), gold.get(f), f)   # docutrust.normalize
@@ -280,6 +376,7 @@ def run_live(img, radius, gold):
         "tok_s": out["eval_count"] / (out["eval_duration"] / 1e9) if out.get("eval_duration") else None,
         "t_ocr": t_ocr, "t_llm": t_llm, "img_b64": base64.b64encode(buf.getvalue()).decode(),
         "tesseract": str(pytesseract.get_tesseract_version()),
+        "n_flagged": sum(is_flagged(r) for r in rows),
     }
 
 

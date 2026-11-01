@@ -67,6 +67,8 @@ def build(condition, model=None):
         llm_path = f"data/llm_models/{model}/{condition}_llm.jsonl"
         out_path = f"data/records_models/{model}/{condition}_records.jsonl"
         samples = {}                                    # samples on disk are Qwen's
+    # real receipts keep hand-written gold next to their images
+    gold_dir = "data/real" if condition == "real" else GOLD_DIR
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     now = datetime.now(timezone.utc).isoformat()
     counts = {"CORRECT": 0, "WRONG": 0, "MISS": 0, "NO_SIGNAL": 0}
@@ -77,7 +79,7 @@ def build(condition, model=None):
         for line in f_in:
             raw = json.loads(line)
             doc = raw["doc_id"]
-            with open(os.path.join(GOLD_DIR, doc + ".json")) as g:
+            with open(os.path.join(gold_dir, doc + ".json")) as g:
                 gold = json.load(g)
             values = parse_values(raw["response"])
             # rules look across fields (e.g. CGST == SGST), so compute once per doc

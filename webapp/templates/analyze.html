@@ -4,23 +4,23 @@
 {% block content %}
 <h1>Live analysis</h1>
 <p class="lede">Runs the real pipeline on an uploaded receipt, using the project's own functions:
-<span class="mono">degrade.blur</span> → <span class="mono">ocr.tesseract.ocr_image</span> →
-<span class="mono">llm.ollama_runner.extract</span> → <span class="mono">signals.logprob.field_signals</span> →
-<span class="mono">normalize.label</span>.</p>
+<span class="mono">ocr.tesseract.ocr_image</span> → <span class="mono">llm.ollama_runner.extract</span> →
+<span class="mono">signals</span> (logprob, OCR confidence, grounding, validation rules, document OCR quality) →
+<span class="mono">fusion.score.fused_confidence</span>.</p>
 
 <div class="grid2">
   <form class="card" method="post" enctype="multipart/form-data"
         onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Running OCR + Qwen…'">
-    <label>Receipt image <span class="hint">PNG / JPG — e.g. data/synthetic/doc_001.png</span></label>
+    <label>Receipt image <span class="hint">PNG / JPG — a synthetic invoice or a phone photo of a printed receipt</span></label>
     <input type="file" name="image" accept="image/*" required>
 
-    <label>Blur radius <span class="hint">same levels as the experiment</span></label>
+    <label>Blur radius <span class="hint">optional — same levels as the experiment</span></label>
     <select name="radius">
-      <option value="0">none (clean)</option>
+      <option value="0">none</option>
       {% for r in levels %}<option value="{{ r }}" {{ 'selected' if radius is defined and radius == r }}>{{ r }}</option>{% endfor %}
     </select>
 
-    <label>Gold labels <span class="hint">optional JSON — for a synthetic doc, copy it from
+    <label>Gold labels <span class="hint">optional JSON, to see CORRECT / WRONG — for a synthetic doc, copy it from
       <a href="{{ url_for('gold_json', doc_id='doc_001') }}" target="_blank">/gold/doc_001.json</a></span></label>
     <textarea name="gold" placeholder='{"merchant_name": "Annapoorna Provisions", "invoice_date": "04/06/2025", "invoice_number": "INV-2025-33433", "total_amount": "2886.96", "cgst_amount": "220.19", "sgst_amount": "220.19"}'>{{ gold | tojson if gold }}</textarea>
 
@@ -36,6 +36,8 @@
     {% endif %}
     <h2>Fields extracted</h2>
     <p class="mono small">{{ fields | join(', ') }}</p>
+    <p class="small">Live uses the 7-signal fusion model (no second OCR engine: EasyOCR is too heavy to run
+      per upload on a laptop). On synthetic data it behaves almost identically to the full 8-signal model.</p>
   </div>
 </div>
 
@@ -48,6 +50,7 @@
   <span>LLM time <b>{{ '%.1f' % result.t_llm }}s</b></span>
   {% if result.tok_s %}<span>speed <b>{{ '%.1f' % result.tok_s }} tok/s</b></span>{% endif %}
   <span>byte reconstruction <b>OK</b></span>
+  <span>fields to check <b>{{ result.n_flagged }}</b></span>
 </div>
 {{ field_table(result.rows, {}, gold is not none) }}
 

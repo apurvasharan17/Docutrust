@@ -79,14 +79,18 @@ def extract(ocr_text):
     d = r.json()
 
     # integrity check: token bytes must rebuild the exact response
-    rebuilt = b"".join(bytes(t["bytes"]) for t in d["logprobs"]).decode()
+    logprobs = d.get("logprobs") or []
+    rebuilt = b"".join(bytes(t["bytes"]) for t in logprobs).decode()
     assert rebuilt == d["response"], "byte reconstruction FAILED"
 
+    # Ollama omits eval_count / eval_duration when the model generates nothing
+    # (seen with Llama 3.1 on heavily degraded text), so read them with defaults.
     return {
         "response": d["response"],
-        "logprobs": d["logprobs"],
-        "eval_count": d["eval_count"],
-        "eval_duration": d["eval_duration"],
+        "logprobs": logprobs,
+        "eval_count": d.get("eval_count", 0),
+        "eval_duration": d.get("eval_duration", 0),
+        "done_reason": d.get("done_reason"),
     }
 
 

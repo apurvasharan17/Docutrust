@@ -3,6 +3,7 @@
 Run from repo root (after build_records.py for every condition):
   python3 scripts/fuse.py
 Writes results/fusion_summary.json
+       results/fusion_oof.jsonl   (each answered field's out-of-fold fused score)
 
 SCOPE: answered fields only (the LLM returned a value).
   On the synthetic set every field is present, so every null is wrong by
@@ -134,6 +135,13 @@ def main():
     summary["in_distribution"] = evaluate(
         "A) in-distribution: 5-fold CV over all 13 conditions",
         scores_a, y, cond, CONDITIONS)
+
+    # save every field's out-of-fold fused score: the Explorer shows these, so each
+    # number in the UI comes from a model that never saw that document
+    with open("results/fusion_oof.jsonl", "w") as f:
+        for r, s in zip(rows, scores_a["fused"]):
+            f.write(json.dumps({"condition": r["condition"], "doc_id": r["doc_id"],
+                                "field_name": r["field_name"], "fused": float(s)}) + "\n")
 
     # B) transfer: train on clean + blur only, test on unseen degradation types
     train_mask = np.isin(cond, TRANSFER_TRAIN)
