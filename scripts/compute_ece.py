@@ -1,13 +1,4 @@
-"""ECE + AUROC for every condition and signal, plus the comparison charts.
 
-Run from repo root (after build_records.py for each condition):
-  python3 scripts/compute_ece.py
-Outputs:
-  results/ece_summary.json              all numbers (+ reliability bins)
-  results/ece_table.csv                 the same numbers as a table
-  results/ece_vs_blur.png               accuracy / ECE / AUROC across conditions
-  results/reliability_by_condition.png  reliability diagrams, logprob_geo
-"""
 import csv
 import json
 import os

@@ -1,38 +1,67 @@
-{# Per-field table. rows: dicts with field_name, raw_value, gold_value?, label?, fused, and TABLE_SIGNALS keys #}
-{% macro field_table(rows, clean_rows={}, show_gold=true) %}
+{# Per-field tables.
+  field_table:  compact view (raw vs fused) shown by default, full signal table behind a toggle. #}
+{% macro ui_style() %}
+<style>
+ details.more { margin-top: 10px; }
+ details.more > summary { cursor: pointer; color: #223975; font-weight: 600; font-size: 14px; list-style: none; padding: 6px 0; }
+ details.more > summary::before { content: "▸ "; color: #F58220; }
+ details.more[open] > summary::before { content: "▾ "; }
+ .verdict { font-weight: 600; font-size: 13px; }
+ .verdict.ok { color: #1E7B4F; } .verdict.check { color: #B3261E; }
+</style>
+{% endmacro %}
+
+{% macro full_signal_table(rows, clean_rows, show_gold) %}
 <div class="tablewrap"><table>
-  <thead><tr>
-    <th>Field</th>{% if show_gold %}<th>Gold</th>{% endif %}<th>Model output</th>{% if show_gold %}<th>Label</th>{% endif %}
-    {% for k, name in TABLE_SIGNALS %}{% set parts = name.split(" · ") %}
-      <th class="num {{ 'fused' if k == FUSED }}"><span class="fam">{{ parts[0] }}</span>{{ parts[1] }}</th>{% endfor %}
-  </tr></thead>
-  <tbody>
-  {% for r in rows %}
-    {% set c = r.get(HEADLINE) %}
-    {% set cw = r.get('label') and r.label != 'CORRECT' and c is not none and c >= CONFIDENT %}
-    {% set fz = r.get(FUSED) %}
-    {% set flagged = fz is not none and fz < FLAG %}
-    <tr class="{{ 'cw' if cw }}">
-      <td class="field">{{ r.field_name }}</td>
-      {% if show_gold %}<td class="pred">{% if r.gold_value is none %}<span class="null">null</span>{% else %}{{ r.gold_value }}{% endif %}</td>{% endif %}
-      <td class="pred">{% if r.raw_value is none %}<span class="null">null</span>{% else %}{{ r.raw_value }}{% endif %}
-        {% set cr = clean_rows.get(r.field_name) %}
-        {% if cr and cr.raw_value != r.raw_value %}<div class="small">clean: {{ cr.raw_value }}</div>{% endif %}
-        {% if flagged %}<div><span class="pill flag">check this field</span></div>{% endif %}</td>
-      {% if show_gold %}<td>{% if r.get('label') %}<span class="pill {{ r.label }}">{{ r.label }}</span>{% endif %}
-        {% if cw %}<span class="pill cw">confident but wrong</span>{% endif %}</td>{% endif %}
-      {% for k, _ in TABLE_SIGNALS %}{% set v = r.get(k) %}
-        {% if k == FUSED %}
-          <td class="v fused {{ 'low' if flagged }}">{{ v | conf(3) }}</td>
-        {% else %}
-          <td class="v {{ 'low' if v is not none and v < 0.9 }}">{{ v | conf(3) }}</td>
-        {% endif %}{% endfor %}
-    </tr>
-  {% endfor %}
-  </tbody>
+ <thead><tr>
+   <th>Field</th>{% if show_gold %}<th>Gold</th>{% endif %}<th>Model output</th>{% if show_gold %}<th>Label</th>{% endif %}
+   {% for k, name in TABLE_SIGNALS %}{% set parts = name.split(" · ") %}
+     <th class="num {{ 'fused' if k == FUSED }}"><span class="fam">{{ parts[0] }}</span>{{ parts[1] }}</th>{% endfor %}
+ </tr></thead>
+ <tbody>
+ {% for r in rows %}
+   {% set fz = r.get(FUSED) %}
+   <tr>
+     <td class="field">{{ r.field_name }}</td>
+     {% if show_gold %}<td class="pred">{% if r.gold_value is none %}<span class="null">null</span>{% else %}{{ r.gold_value }}{% endif %}</td>{% endif %}
+     <td class="pred">{% if r.raw_value is none %}<span class="null">null</span>{% else %}{{ r.raw_value }}{% endif %}</td>
+     {% if show_gold %}<td>{% if r.get('label') %}<span class="pill {{ r.label }}">{{ r.label }}</span>{% endif %}</td>{% endif %}
+     {% for k, _ in TABLE_SIGNALS %}{% set v = r.get(k) %}
+       <td class="v {{ 'fused' if k == FUSED }} {{ 'low' if v is not none and ((k == FUSED and v < FLAG) or (k != FUSED and v < 0.9)) }}">{{ v | conf(3) }}</td>{% endfor %}
+   </tr>
+ {% endfor %}
+ </tbody>
 </table></div>
-<p class="legend"><b>Fused</b> = one calibrated confidence from all signals (logistic regression trained on synthetic data);
-“check this field” when it is below {{ FLAG }}.
-Red rows: wrong or missed, yet raw {{ SIGNAL_NAMES[HEADLINE] }} ≥ {{ CONFIDENT }}.
-Fused is “—” for null answers (it scores returned values only); other “—” = signal unavailable (kept as None, never 0).</p>
+<p class="legend">Signals the fused score is built from. "—" = signal not available for this field (e.g. the model returned null).</p>
+{% endmacro %}
+
+{% macro field_table(rows, clean_rows={}, show_gold=true) %}
+{{ ui_style() }}
+<div class="tablewrap"><table>
+ <thead><tr>
+   <th>Field</th>{% if show_gold %}<th>Correct value</th>{% endif %}<th>Model output</th>{% if show_gold %}<th>Result</th>{% endif %}
+   <th class="num">Raw confidence</th><th class="num fused">Fused confidence</th><th>Action</th>
+ </tr></thead>
+ <tbody>
+ {% for r in rows %}
+   {% set fz = r.get(FUSED) %}
+   {% set flagged = fz is not none and fz < FLAG %}
+   <tr>
+     <td class="field">{{ r.field_name }}</td>
+     {% if show_gold %}<td class="pred">{% if r.gold_value is none %}<span class="null">null</span>{% else %}{{ r.gold_value }}{% endif %}</td>{% endif %}
+     <td class="pred">{% if r.raw_value is none %}<span class="null">null</span>{% else %}{{ r.raw_value }}{% endif %}
+       {% set cr = clean_rows.get(r.field_name) %}
+       {% if cr and cr.raw_value != r.raw_value %}<div class="small">clean: {{ cr.raw_value }}</div>{% endif %}</td>
+     {% if show_gold %}<td>{% if r.get('label') %}<span class="pill {{ r.label }}">{{ r.label }}</span>{% endif %}</td>{% endif %}
+     <td class="v">{{ r.get(HEADLINE) | conf(3) }}</td>
+     <td class="v fused {{ 'low' if flagged }}">{{ fz | conf(3) }}</td>
+     <td>{% if fz is none %}<span class="small">not scored (null)</span>
+         {% elif flagged %}<span class="verdict check">Check this field</span>
+         {% else %}<span class="verdict ok">Looks OK</span>{% endif %}</td>
+   </tr>
+ {% endfor %}
+ </tbody>
+</table></div>
+<p class="legend"><b>Raw</b> = the LLM's own confidence. <b>Fused</b> = DocuTrust's combined confidence; below {{ FLAG }} the field is sent for checking.</p>
+<details class="more"><summary>Show all signals</summary>{{ full_signal_table(rows, clean_rows, show_gold) }}</details>
 {% endmacro %}

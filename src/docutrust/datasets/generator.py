@@ -1,11 +1,3 @@
-"""Synthetic GST invoice generator.
-
-make_fields(seed) -> gold field values for one document
-render(fields, seed) -> PIL image of the invoice
-main() -> writes data/synthetic/doc_XXX.png + doc_XXX.json
-
-Same seed => same document, always (reproducibility).
-"""
 import json
 import os
 import random

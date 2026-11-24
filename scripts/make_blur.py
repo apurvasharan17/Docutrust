@@ -1,11 +1,4 @@
-"""Blur all clean invoices at 3 levels, save the images, and OCR them.
 
-Run from repo root:
-  python3 scripts/make_blur.py
-Outputs (per level):
-  data/degraded/blur_r1.0/doc_001.png ...
-  data/ocr/blur_r1.0_ocr.jsonl
-"""
 import glob
 import json
 import os

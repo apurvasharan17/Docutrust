@@ -1,15 +1,5 @@
 def expected_calibration_error(confidences, correct, n_bins=10):
-    """
-    Expected Calibration Error.
 
-    confidences: list of floats in [0, 1]
-    correct:     list of bools (same length)
-    n_bins:      number of equal-width bins
-
-    Bin assignment: bin i covers [i/n_bins, (i+1)/n_bins).
-    conf == 1.0 is clamped into the last bin.
-    Empty bins contribute nothing.
-    """
     if len(confidences) != len(correct):
         raise ValueError("confidences and correct must be the same length")
     if not confidences:

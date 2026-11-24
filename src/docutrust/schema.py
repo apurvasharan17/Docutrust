@@ -52,11 +52,9 @@ class FieldRecord:
     hardware: Optional[str] = None
     run_timestamp: Optional[str] = None
     def to_dict(self):
-        # hint: asdict() imports mein add karna padega
         ...
         return asdict(self)
 
     @classmethod
     def from_dict(cls, d):
-        # hint: cls(**d) imports mein add karna padega
         return cls(**d)

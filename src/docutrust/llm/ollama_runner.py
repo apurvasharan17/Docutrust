@@ -1,17 +1,3 @@
-"""LLM stage: send cached OCR text to Qwen (via Ollama) and save raw output.
-
-Runs on Kaggle (T4).
-
-1) Main run (greedy, temperature 0, with logprobs)  -> the answer we score
-     run_batch("<cond>_ocr.jsonl", "<cond>_llm.jsonl")
-2) Self-consistency run (n samples at temperature > 0, fixed seeds)
-     run_samples("<cond>_ocr.jsonl", "<cond>_samples.jsonl")
-   Later, on the Mac, each field's self_consistency = share of samples that
-   agree with the greedy answer.
-
-Both are resumable: docs already in the output file are skipped, so a Kaggle
-disconnect never costs you finished work.
-"""
 import argparse
 import json
 import os

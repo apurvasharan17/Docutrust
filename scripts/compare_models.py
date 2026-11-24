@@ -1,21 +1,4 @@
-"""Compare calibration across Qwen 2.5 7B, Llama 3.1 8B and Mistral 7B.
 
-Run from repo root (after build_records.py for every model):
-  python3 scripts/compare_models.py
-Writes results/model_comparison.json
-
-Shared conditions (all three models ran these):
-  clean, blur_r2.0, noise_s42, jpeg_q1, lowres_f0.35
-
-Three questions:
-  1) Is raw logprob overconfident for every model?   (all fields, nulls included)
-  2) Does fusion work for every model?                (answered fields;
-       raw vs Platt vs fused, each model trained on its own data)
-  3) Model transfer: does a fusion model trained ONLY on Qwen (all 13 conditions)
-       calibrate Llama and Mistral without retraining?
-Folds are split by doc_id everywhere: a test invoice is never in training,
-for any model or condition.
-"""
 import json
 import sys
 

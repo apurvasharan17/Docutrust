@@ -1,12 +1,4 @@
-"""Real receipts: fix orientation, resize, run Tesseract.
 
-Run from repo root:
-  python3 scripts/prep_real.py
-Reads   data/raw/<receipt>.jpg
-Writes  data/real/<receipt>.png             (upright, at most 2000 px on the long side)
-        data/ocr/real_ocr.jsonl             (condition "real", same format as every OCR file)
-Gold labels are written by hand in data/real/<receipt>.json.
-"""
 import json
 import os
 import sys

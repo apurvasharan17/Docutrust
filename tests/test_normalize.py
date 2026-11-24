@@ -4,10 +4,10 @@ import pytest
 from docutrust.normalize import label, normalize_amount, normalize_text
 
 
-# ---------- labelling policy: null handling ----------
+
 
 def test_both_null_is_correct():
-    # field absent in gold and model says null -> correct
+    
     assert label(None, None, "invoice_number") == "CORRECT"
 
 
@@ -16,17 +16,17 @@ def test_gold_present_predicted_null_is_miss():
 
 
 def test_gold_null_predicted_value_is_wrong():
-    # model invented a value that is not on the document
+    
     assert label("123.45", None, "cgst_amount") == "WRONG"
 
 
-# ---------- amounts: compared as numbers ----------
+
 
 @pytest.mark.parametrize("predicted, gold", [
-    ("₹2,627.00", "2627.00"),   # rupee sign and comma stripped
-    ("2627", "2627.00"),        # 2627 == 2627.00 numerically
-    ("Rs. 123.98", "123.98"),   # "Rs." prefix
-    ("INR 1,23,456", "123456"), # Indian digit grouping
+    ("₹2,627.00", "2627.00"),   
+    ("2627", "2627.00"),       
+    ("Rs. 123.98", "123.98"),   
+    ("INR 1,23,456", "123456"), 
 ])
 def test_amount_formats_match(predicted, gold):
     assert label(predicted, gold, "total_amount") == "CORRECT"
@@ -42,7 +42,7 @@ def test_unparseable_amount_is_wrong_not_crash():
     assert label("abc", "100.00", "total_amount") == "WRONG"
 
 
-# ---------- text: case- and whitespace-insensitive ----------
+
 
 def test_text_case_insensitive():
     assert label("dmart banashankari", "DMART BANASHANKARI", "merchant_name") == "CORRECT"

@@ -1,19 +1,4 @@
-"""Train the final fusion models once and save them for the Flask app.
 
-Run from repo root (after build_records.py for all 13 conditions):
-  python3 scripts/train_fusion.py
-Writes, for each model variant:
-  artifacts/<name>.joblib   the fitted model (StandardScaler + LogisticRegression)
-  artifacts/<name>.json     what it was trained on: features (in order), data, date
-
-Variants:
-  fusion_model       all 8 signals              -> Explorer (EasyOCR results exist)
-  fusion_model_live  7 signals, no EasyOCR      -> Live page (EasyOCR is too heavy
-                                                   to run on the Mac per upload)
-Same setup as fuse.py: Qwen's answered fields from all 13 synthetic conditions,
-the same model. fuse.py measures how well this approach generalises
-(cross-validated); this script fits final models on all the data for the app.
-"""
 import json
 import os
 import sys

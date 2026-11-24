@@ -1,14 +1,4 @@
-"""Pick degradation severities BEFORE spending any GPU time.
 
-For each degradation type and each candidate level, degrade the first N clean
-invoices in memory, run Tesseract, and measure "survival": the share of gold
-field values whose words all still appear in the OCR output. The existing blur
-levels are included as the reference to match (mild / medium / heavy).
-
-Run from repo root (takes a few minutes, Mac only):
-  python3 scripts/tune_severity.py
-Nothing is written to disk.
-"""
 import glob
 import json
 import os

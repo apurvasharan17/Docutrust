@@ -1,17 +1,4 @@
-"""Apply the fusion model trained on SYNTHETIC data to real receipts.
 
-Run from repo root (after build_records.py real):
-  python3 scripts/score_real.py
-
-The models are trained on Qwen's answered fields from all 13 synthetic
-conditions, then applied unchanged to the real receipts: the model has never
-seen a real receipt. With only a few receipts this is a case study, not a
-statistical result, so every field is printed.
-
-Fields the LLM returned as null are shown but not scored (the fusion model
-covers answered fields only). On real receipts a null can be correct, when the
-field is genuinely not printed.
-"""
 import json
 import sys
 

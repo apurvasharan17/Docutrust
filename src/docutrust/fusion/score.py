@@ -1,16 +1,3 @@
-"""Fused confidence for one extracted field, using a saved fusion model.
-
-No training happens here: scripts/train_fusion.py fits the models and saves
-them to artifacts/. This module only loads a model and scores fields, so the
-Flask app (and anything else) can use the fusion without research code.
-
-  fused_confidence(signals)                           full model, 8 signals
-  fused_confidence(signals, model="fusion_model_live") no EasyOCR, 7 signals
-
-`signals` is a dict like a records row: it needs "raw_value" and the signal
-keys listed in the model's .json file. Missing signals count as 0.0 ("no
-evidence"), exactly as in training.
-"""
 import json
 from functools import lru_cache
 from pathlib import Path
@@ -18,7 +5,7 @@ from pathlib import Path
 import joblib
 import numpy as np
 
-# src/docutrust/fusion/score.py -> repo root is 3 folders up from this folder
+
 ROOT = Path(__file__).resolve().parents[3]
 ARTIFACTS = ROOT / "artifacts"
 

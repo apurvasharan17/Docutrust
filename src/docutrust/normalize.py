@@ -9,10 +9,7 @@ FIELD_TYPES = {
 
 
 def label(predicted, gold, field_name):
-    # 1. dono None?
-    # 2. gold hai, predicted None?
-    # 3. gold None, predicted kuch hai?
-    # 4. dono hain — type ke hisaab se compare
+
     if predicted is None and gold is None:
         return "CORRECT"
     if predicted is None:

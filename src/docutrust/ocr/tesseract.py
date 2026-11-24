@@ -1,8 +1,3 @@
-"""OCR stage: run Tesseract on every synthetic invoice and cache the result.
-
-Output: data/ocr/clean_ocr.jsonl  (one JSON object per line, one line per doc)
-This file is what gets uploaded to Kaggle — the LLM stage never touches images.
-"""
 import glob
 import json
 import os
@@ -42,7 +37,6 @@ def main():
             result = ocr_image(path)
             record = {
                 "doc_id": doc_id,
-                "condition": "clean",
                 "image_path": path,
                 "ocr_engine": "tesseract",
                 "ocr_version": version,

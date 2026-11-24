@@ -16,13 +16,12 @@ def make_record():
 
 def test_jsonl_round_trip():
     rec = make_record()
-    line = json.dumps(rec.to_dict(), ensure_ascii=False)   # one JSONL line
+    line = json.dumps(rec.to_dict(), ensure_ascii=False) 
     back = FieldRecord.from_dict(json.loads(line))
     assert back == rec
 
 
 def test_missing_signal_stays_none_not_zero():
-    # "signal not computed" must never turn into 0.0
     rec = make_record()
     back = FieldRecord.from_dict(json.loads(json.dumps(rec.to_dict())))
     assert back.self_consistency is None

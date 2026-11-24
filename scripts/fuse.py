@@ -1,32 +1,4 @@
-"""Fusion: combine all confidence signals into one calibrated score.
 
-Run from repo root (after build_records.py for every condition):
-  python3 scripts/fuse.py
-Writes results/fusion_summary.json
-       results/fusion_oof.jsonl   (each answered field's out-of-fold fused score)
-
-SCOPE: answered fields only (the LLM returned a value).
-  On the synthetic set every field is present, so every null is wrong by
-  construction. A model that saw nulls would just learn "null -> wrong",
-  which says nothing about real receipts where fields can be truly absent.
-
-SIGNALS: 8 signals available for every condition. self_consistency is left
-  out on purpose: it exists only for clean + blur (it costs 5x the LLM calls
-  and added little to the fusion), so using it would mean imputing it for the
-  other 9 conditions.
-
-THREE SCORES per field:
-  raw_logprob : logprob_geo as is                  (the baseline we criticise)
-  platt       : logistic regression on logprob_geo (fair recalibration baseline)
-  fused       : logistic regression on all signals (our method)
-
-TWO EVALUATIONS:
-  A) in-distribution : 5-fold CV over all 13 conditions
-  B) transfer        : train on clean + blur ONLY, test on noise / JPEG / low-res
-                       (degradation types the model has never seen)
-  Both split folds by doc_id, so a test invoice is never in training under any
-  degradation.
-"""
 import json
 import sys
 

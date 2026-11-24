@@ -1,12 +1,4 @@
-"""Degradation sweep: noise, JPEG and low-res at 3 levels each, then OCR.
 
-Same job as make_blur.py, for the other degradation types.
-Run from repo root (Mac, ~5-10 min):
-  python3 scripts/make_sweep.py
-Outputs, per condition (e.g. noise_s42):
-  data/degraded/<condition>/doc_001.png ...
-  data/ocr/<condition>_ocr.jsonl
-"""
 import glob
 import json
 import os

@@ -6,8 +6,7 @@
   <div class="card empty">No records yet — run <span class="mono">scripts/build_records.py</span>.</div>
 {% else %}
 <h1>Document explorer</h1>
-<p class="lede">Every stage of the pipeline for one document, from cached outputs: image → Tesseract OCR → Qwen output
-→ per-field signals → <b>fused confidence</b> → label.</p>
+<p class="lede">Pick a damage level and an invoice to see what the model extracted and how much to trust it.</p>
 
 <div class="tabs">
   {% for c in conds %}<a href="{{ url_for('explorer', cond=c) }}" class="{{ 'on' if c == cond }}">{{ pretty(c) }}</a>{% endfor %}
@@ -22,11 +21,8 @@
       {% endfor %}
     </select></div>
   <div class="small" style="padding-bottom:10px">
-    {{ pretty(cond) }}: <b>{{ stats.correct }}/{{ stats.n }}</b> fields correct ·
-    <b style="color:var(--bad)">{{ stats.cw }}</b> of {{ stats.wrong }} wrong/missed fields had raw confidence ≥ {{ CONFIDENT }}
-    {% if stats.cw_values %} · fusion flags <b class="good">{{ stats.caught }} of {{ stats.cw_values }}</b>
-      confident-but-wrong values{% endif %}
-    <div>Fused scores: {{ fused_source }}.</div>
+    {{ pretty(cond) }}: <b>{{ stats.correct }} of {{ stats.n }}</b> fields correct
+    {% if stats.cw_values %} · fusion flags <b class="good">{{ stats.caught }} of {{ stats.cw_values }}</b> confidently wrong values{% endif %}
   </div>
 </form>
 
@@ -41,39 +37,39 @@
 
 <h2>Fields</h2>
 {{ field_table(rows, clean_rows) }}
+<p class="small">Fused scores: {{ fused_source }}.</p>
 
-<div class="grid2" style="margin-top:20px">
+<details class="more"><summary>Show OCR text and raw LLM output</summary>
+<div class="grid2" style="margin-top:10px">
   <div class="card"><h2 style="margin-top:0">What Tesseract read</h2>
     {% if ocr %}<pre>{{ ocr.ocr_text }}</pre><div class="small">{{ ocr.words | length }} words · Tesseract {{ ocr.ocr_version }}</div>
     {% else %}<div class="small">No OCR record for this document.</div>{% endif %}</div>
-  <div class="card"><h2 style="margin-top:0">What Qwen returned</h2>
+  <div class="card"><h2 style="margin-top:0">What the LLM returned</h2>
     {% if llm %}<pre>{{ llm.response }}</pre>
-      <div class="small">{{ llm.logprobs | length }} tokens · {{ llm.model }} · Ollama {{ llm.ollama_version }} · {{ llm.gpu }} · KV {{ llm.kv_cache }}
-      {% if llm.eval_duration %} · {{ '%.1f' % (llm.eval_count / (llm.eval_duration / 1e9)) }} tok/s{% endif %}</div>
+      <div class="small">{{ llm.model }} · Ollama {{ llm.ollama_version }} · {{ llm.gpu }}</div>
     {% else %}<div class="small">No LLM record for this document.</div>{% endif %}</div>
 </div>
+</details>
 
 {% if worst %}
-<h2>Most confident wrong values in {{ pretty(cond) }}</h2>
-<p class="small" style="margin-top:-6px">The model returned a value, it was wrong, and raw logprob was still sure.
-Compare the fused column. ({{ stats.miss_cw }} more fields were missed — returned <span class="mono">null</span> — with raw confidence ≥ {{ CONFIDENT }}.)</p>
-<div class="tablewrap"><table>
-  <thead><tr><th>Doc</th><th>Field</th><th>Gold</th><th>Model output</th><th>Label</th>
-    <th class="num">{{ SIGNAL_NAMES[HEADLINE] }}</th><th class="num fused">Fused · confidence</th></tr></thead>
+<details class="more"><summary>Show the most confidently wrong values in {{ pretty(cond) }}</summary>
+<div class="tablewrap" style="margin-top:10px"><table>
+  <thead><tr><th>Doc</th><th>Field</th><th>Correct value</th><th>Model output</th>
+    <th class="num">Raw confidence</th><th class="num fused">Fused confidence</th></tr></thead>
   <tbody>
-  {% for r in worst %}
-    <tr class="wrongrow">
+  {% for r in worst[:8] %}
+    <tr>
       <td><a href="{{ url_for('explorer', cond=cond, doc=r.doc_id) }}">{{ r.doc_id }}</a></td>
       <td class="field">{{ r.field_name }}</td>
       <td class="pred">{{ r.gold_value if r.gold_value is not none else 'null' }}</td>
-      <td class="pred">{% if r.raw_value is none %}<span class="null">null</span>{% else %}{{ r.raw_value }}{% endif %}</td>
-      <td><span class="pill {{ r.label }}">{{ r.label }}</span></td>
-      <td class="v">{{ r.get(HEADLINE) | conf(4) }}</td>
-      <td class="v fused {{ 'low' if r.get(FUSED) is not none and r.get(FUSED) < FLAG }}">{{ r.get(FUSED) | conf(4) }}</td>
+      <td class="pred">{{ r.raw_value }}</td>
+      <td class="v">{{ r.get(HEADLINE) | conf(3) }}</td>
+      <td class="v fused {{ 'low' if r.get(FUSED) is not none and r.get(FUSED) < FLAG }}">{{ r.get(FUSED) | conf(3) }}</td>
     </tr>
   {% endfor %}
   </tbody>
 </table></div>
+</details>
 {% endif %}
 {% endif %}
 {% endblock %}

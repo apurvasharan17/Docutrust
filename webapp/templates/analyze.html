@@ -1,65 +1,58 @@
 {% extends "base.html" %}
-{% from "_fields.html" import field_table with context %}
+{% from "_fields.html" import field_table, ui_style with context %}
 {% block title %}Live · DocuTrust{% endblock %}
 {% block content %}
-<h1>Live analysis</h1>
-<p class="lede">Runs the real pipeline on an uploaded receipt, using the project's own functions:
-<span class="mono">ocr.tesseract.ocr_image</span> → <span class="mono">llm.ollama_runner.extract</span> →
-<span class="mono">signals</span> (logprob, OCR confidence, grounding, validation rules, document OCR quality) →
-<span class="mono">fusion.score.fused_confidence</span>.</p>
+{{ ui_style() }}
+<h1>Try it on a receipt</h1>
+<p class="lede">Upload a receipt photo. DocuTrust reads it, extracts 6 fields, and tells you which ones to double-check.</p>
 
 <div class="grid2">
   <form class="card" method="post" enctype="multipart/form-data"
-        onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Running OCR + Qwen…'">
-    <label>Receipt image <span class="hint">PNG / JPG — a synthetic invoice or a phone photo of a printed receipt</span></label>
+        onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Reading the receipt…'">
+    <label>Receipt image <span class="hint">PNG or JPG</span></label>
     <input type="file" name="image" accept="image/*" required>
 
-    <label>Blur radius <span class="hint">optional — same levels as the experiment</span></label>
-    <select name="radius">
-      <option value="0">none</option>
-      {% for r in levels %}<option value="{{ r }}" {{ 'selected' if radius is defined and radius == r }}>{{ r }}</option>{% endfor %}
-    </select>
+    <details class="more"><summary>Options</summary>
+      <label>Blur the image first <span class="hint">to simulate a bad photo</span></label>
+      <select name="radius">
+        <option value="0">no blur</option>
+        {% for r in levels %}<option value="{{ r }}" {{ 'selected' if radius is defined and radius == r }}>radius {{ r }}</option>{% endfor %}
+      </select>
+      <label>Correct values <span class="hint">optional JSON, to mark each field right or wrong</span></label>
+      <textarea name="gold" placeholder='{"total_amount": "2627.00", "cgst_amount": "123.98"}'>{{ gold | tojson if gold }}</textarea>
+    </details>
 
-    <label>Gold labels <span class="hint">optional JSON, to see CORRECT / WRONG — for a synthetic doc, copy it from
-      <a href="{{ url_for('gold_json', doc_id='doc_001') }}" target="_blank">/gold/doc_001.json</a></span></label>
-    <textarea name="gold" placeholder='{"merchant_name": "Annapoorna Provisions", "invoice_date": "04/06/2025", "invoice_number": "INV-2025-33433", "total_amount": "2886.96", "cgst_amount": "220.19", "sgst_amount": "220.19"}'>{{ gold | tojson if gold }}</textarea>
-
-    <button type="submit" {{ 'disabled' if not status.ok }}>Run pipeline</button>
+    <button type="submit" {{ 'disabled' if not status.ok }}>Analyse receipt</button>
   </form>
 
   <div class="card">
-    <div class="status {{ '' if status.ok else 'down' }}"><span class="dot"></span>{{ status.detail }}</div>
+    <div class="status {{ '' if status.ok else 'down' }}"><span class="dot"></span>{{ 'Model ready' if status.ok else 'Model not connected' }}</div>
     {% if not status.ok %}
-    <p class="small" style="margin-top:14px">The Live page needs a running Ollama with <span class="mono">{{ model }}</span>.
-      For Kaggle: run <span class="mono">webapp/kaggle_tunnel.py</span> in the notebook, then start this app with
+    <p class="small" style="margin-top:14px">Start the Kaggle tunnel and run the app with
       <span class="mono">DOCUTRUST_OLLAMA_URL=&lt;tunnel url&gt;</span>. Results and Explorer work without it.</p>
     {% endif %}
-    <h2>Fields extracted</h2>
-    <p class="mono small">{{ fields | join(', ') }}</p>
-    <p class="small">Live uses the 7-signal fusion model (no second OCR engine: EasyOCR is too heavy to run
-      per upload on a laptop). On synthetic data it behaves almost identically to the full 8-signal model.</p>
+    <h2>What it extracts</h2>
+    <p class="small">Merchant name · invoice date · invoice number · total · CGST · SGST</p>
   </div>
 </div>
 
 {% if result %}
-<h2>Result · {{ pretty(result.cond) }}</h2>
+<h2>Result</h2>
 <div class="stats" style="margin-bottom:14px">
-  <span>OCR words <b>{{ result.ocr_words }}</b></span>
-  <span>OCR time <b>{{ '%.1f' % result.t_ocr }}s</b></span>
-  <span>LLM tokens <b>{{ result.n_tokens }}</b></span>
-  <span>LLM time <b>{{ '%.1f' % result.t_llm }}s</b></span>
-  {% if result.tok_s %}<span>speed <b>{{ '%.1f' % result.tok_s }} tok/s</b></span>{% endif %}
-  <span>byte reconstruction <b>OK</b></span>
-  <span>fields to check <b>{{ result.n_flagged }}</b></span>
+  <span>Fields to check <b>{{ result.n_flagged }} of 6</b></span>
+  <span>Time <b>{{ '%.1f' % (result.t_ocr + result.t_llm) }} s</b></span>
 </div>
 {{ field_table(result.rows, {}, gold is not none) }}
 
-<div class="grid2" style="margin-top:20px">
+<details class="more"><summary>Show the image, OCR text and raw LLM output</summary>
+<div class="grid2" style="margin-top:10px">
   <div class="card"><h2 style="margin-top:0">Input image</h2>
     <img class="runimg" src="data:image/png;base64,{{ result.img_b64 }}" alt="input"></div>
   <div class="card">
     <h2 style="margin-top:0">What Tesseract read</h2><pre>{{ result.ocr_text }}</pre>
-    <h2>What Qwen returned</h2><pre>{{ result.response }}</pre></div>
+    <h2>What the LLM returned</h2><pre>{{ result.response }}</pre>
+    <p class="small">OCR {{ '%.1f' % result.t_ocr }} s · LLM {{ '%.1f' % result.t_llm }} s · {{ result.ocr_words }} words read</p></div>
 </div>
+</details>
 {% endif %}
 {% endblock %}

@@ -1,14 +1,9 @@
-"""JPEG compression degradation: WhatsApp-forwarded and heavily compressed images.
 
-Deterministic: the JPEG encoder gives the same output for the same input and quality.
-"""
 import io
 
 from PIL import Image
 
-# tuned on 20 docs: Tesseract survival 0.97 / 0.89 / 0.67.
-# JPEG never gets "heavy" on printed text, even at quality 1; we keep its natural range.
-JPEG_LEVELS = [10, 5, 1]   # quality, lower = worse
+JPEG_LEVELS = [10, 5, 1]  
 
 
 def jpeg(img, quality):
